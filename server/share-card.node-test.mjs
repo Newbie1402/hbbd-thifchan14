@@ -5,7 +5,7 @@ import { BinaryBitmap, HybridBinarizer, QRCodeReader, RGBLuminanceSource } from 
 import { createShareCard } from './share-card.mjs';
 
 test('share card is full-size and its heart-marked QR decodes to the share URL', async () => {
-  const url = 'https://birthday.example.com/share';
+  const url = 'https://thifchann14.newbiexyz.id.vn/share?v=3';
   const card = await createShareCard(url);
   const metadata = await sharp(card).metadata();
   assert.deepEqual([metadata.width, metadata.height], [1200, 630]);

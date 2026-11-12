@@ -1,12 +1,12 @@
 import QRCode from 'qrcode';
 import sharp from 'sharp';
 
-export const SHARE_CARD_VERSION = 2;
+export const SHARE_CARD_VERSION = 3;
 
 export async function createShareCard(url) {
   const qr = await QRCode.toBuffer(url, {
     type: 'png',
-    errorCorrectionLevel: 'H',
+    errorCorrectionLevel: 'Q',
     margin: 2,
     width: 600,
     color: { dark: '#c52f72', light: '#fffafd' },
