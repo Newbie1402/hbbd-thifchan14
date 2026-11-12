@@ -33,6 +33,7 @@ const signedUrlSeconds = 3600;
 if (prefix.length > 1024 || Array.from(prefix).some((char) => char.charCodeAt(0) < 32) || prefix.split('/').includes('..')) throw new Error('MINIO_PREFIX is invalid.');
 
 app.disable('x-powered-by');
+app.set('trust proxy', process.env.TRUST_PROXY || false);
 app.use(express.json({ limit: '64kb' }));
 app.use((request, response, next) => {
   const origin = request.get('origin');
