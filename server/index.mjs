@@ -6,9 +6,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { createHmac, randomBytes } from 'node:crypto';
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import sharp from 'sharp';
-import QRCode from 'qrcode';
 import { selectNumberedImages } from './memory-utils.mjs';
+import { createShareCard, SHARE_CARD_VERSION } from './share-card.mjs';
 
 const app = express();
 const port = Number(process.env.MEMORIES_API_PORT || 8787);
@@ -111,7 +112,7 @@ const loginAttempts = new Map();
 const publicSiteConfig = () => {
   const values = Object.fromEntries(db.prepare('SELECT key,value FROM settings').all().map((row) => [row.key, row.value]));
   const base = (values.publicBaseUrl || process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
-  return { shareUrl: base ? `${base}/share` : null, shareReady: Boolean(base && values.shareEnabled === 'true'), title: values.shareTitle || 'A little birthday surprise for Thuỳ Trang ♡', description: values.shareDescription || 'Một góc nhỏ pastel dành riêng cho Thuỳ Trang.', ogImageUrl: base ? `${base}/api/public/share-card.png` : null, questEnabled: true };
+  return { shareUrl: base ? `${base}/share?v=${SHARE_CARD_VERSION}` : null, shareReady: Boolean(base && values.shareEnabled === 'true'), title: values.shareTitle || 'A little birthday surprise for Thuỳ Trang ♡', description: values.shareDescription || 'Một góc nhỏ pastel dành riêng cho Thuỳ Trang.', ogImageUrl: base ? `${base}/api/public/share-card.png?v=${SHARE_CARD_VERSION}` : null, questEnabled: true };
 };
 const safeImage = (row, src, thumbnailSrc=src) => ({ id: row.id, sortOrder: row.sort_order, src, thumbnailSrc, width: row.width||1200, height: row.height||900, alt: row.alt, caption: row.caption, filename: row.filename, visible: Boolean(row.visible), missing: Boolean(row.missing), filenameIndex: row.filename_index });
 async function makeThumbnail(key,id){const object=await client.send(new GetObjectCommand({Bucket:bucket,Key:key}));if(!object.Body||object.ContentLength>50*1024*1024)throw new Error('Image is too large or unavailable.');const buffer=Buffer.from(await object.Body.transformToByteArray());const meta=await sharp(buffer,{limitInputPixels:40_000_000}).metadata();if(!meta.width||!meta.height||!['jpeg','png','webp','avif'].includes(meta.format||''))throw new Error('Unsupported image data.');const swap=[5,6,7,8].includes(meta.orientation||1);const width=swap?meta.height:meta.width;const height=swap?meta.width:meta.height;const thumbnailKey=`${prefix}.thumbnails/${id}.webp`;const thumbnail=await sharp(buffer,{limitInputPixels:40_000_000}).rotate().resize({width:480,height:480,fit:'inside',withoutEnlargement:true}).webp({quality:78}).toBuffer();await client.send(new PutObjectCommand({Bucket:bucket,Key:thumbnailKey,Body:thumbnail,ContentType:'image/webp',CacheControl:'public,max-age=31536000,immutable'}));return {width,height,thumbnailKey};}
@@ -161,16 +162,38 @@ function requireAdmin(req, res, next) {
   req.adminSession = session; next();
 }
 function sessionKey(token){return process.env.SESSION_SECRET?createHmac('sha256',process.env.SESSION_SECRET).update(token).digest('hex'):'';}
+const mediaUrl = (id, thumbnail = false) => `/api/media/${encodeURIComponent(id)}${thumbnail ? '?thumbnail=1' : ''}`;
 app.use((req, _res, next) => {
   const cookies = Object.fromEntries((req.headers.cookie || '').split(';').map((part) => part.trim().split('=').map(decodeURIComponent)).filter((parts) => parts.length === 2));
   req.cookies = cookies; next();
 });
 app.get('/api/public/site-config', (_req, res) => res.set('Cache-Control','public, max-age=30').json(publicSiteConfig()));
+app.get('/api/media/:id', requireMinio, async (req, res) => {
+  const row = db.prepare('SELECT * FROM images WHERE id=?').get(req.params.id);
+  if (!row || row.missing) return res.sendStatus(404);
+  const session = sessions.get(sessionKey(req.cookies?.birthday_session || ''));
+  if (!row.visible && (!session || session.expiresAt < Date.now())) return res.sendStatus(404);
+  const useThumbnail = req.query.thumbnail === '1' && Boolean(row.thumbnail_key);
+  try {
+    const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: useThumbnail ? row.thumbnail_key : row.object_key }));
+    if (!object.Body) return res.sendStatus(404);
+    res.set({
+      'Content-Type': useThumbnail ? 'image/webp' : row.mime_type,
+      'Cache-Control': row.visible ? 'public, max-age=300' : 'private, no-store',
+      ...(object.ETag ? { ETag: object.ETag } : {}),
+    });
+    await pipeline(object.Body, res);
+  } catch (error) {
+    console.error('Unable to serve birthday memory:', error instanceof Error ? error.message : 'unknown storage error');
+    if (!res.headersSent) res.status(502).json({ error: 'Image is temporarily unavailable.' });
+    else res.destroy();
+  }
+});
 app.get('/api/public/memories', requireMinio, async (_req, res) => {
   try {
     const rows = await syncImages();
     const visible = rows.filter((row) => row.visible && !row.missing);
-    const items = await Promise.all(visible.map(async (row) => safeImage(row, await getSignedUrl(client, new GetObjectCommand({ Bucket: bucket, Key: row.object_key }), { expiresIn: signedUrlSeconds }),row.thumbnail_key?await getSignedUrl(client,new GetObjectCommand({Bucket:bucket,Key:row.thumbnail_key}),{expiresIn:signedUrlSeconds}):undefined)));
+    const items = visible.map((row) => safeImage(row, mediaUrl(row.id), mediaUrl(row.id, true)));
     const revision = rows.at(-1)?.updated_at || '0';
     res.set('Cache-Control',`public, max-age=${cacheTtlSeconds}`).json({ items, total: items.length, revision });
   } catch { res.status(502).json({ error: 'Memories are temporarily unavailable. Please retry shortly.' }); }
@@ -179,9 +202,7 @@ app.get('/api/public/share-card.png', async (_req, res) => {
   const config = publicSiteConfig();
   if (!config.shareReady) return res.status(404).json({ error: 'Set the public HTTPS domain in Birthday OS admin first.' });
   try {
-    const qr = await QRCode.toBuffer(config.shareUrl, { type:'png', errorCorrectionLevel:'H', margin:4, width:270, color:{dark:'#173b45',light:'#ffffff'} });
-    const card = Buffer.from(`<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g"><stop stop-color="#ccffff"/><stop offset="1" stop-color="#ffcccc"/></linearGradient></defs><rect width="1200" height="630" rx="40" fill="url(#g)"/><rect x="40" y="40" width="1120" height="550" rx="36" fill="#ffffff" fill-opacity=".75"/><text x="90" y="220" font-family="Arial,sans-serif" font-size="58" font-weight="700" fill="#d75391">A little birthday surprise</text><text x="90" y="300" font-family="Arial,sans-serif" font-size="54" font-weight="700" fill="#365965">for Thuỳ Trang ♡</text><text x="90" y="390" font-family="Arial,sans-serif" font-size="28" fill="#567680">A tiny pastel corner, made just for you.</text><text x="90" y="510" font-family="Arial,sans-serif" font-size="22" fill="#3b929c">Scan to open the birthday space</text></svg>`);
-    const png = await sharp(card).composite([{ input:qr,left:820,top:165 }]).png().toBuffer();
+    const png = await createShareCard(config.shareUrl);
     res.set({ 'Content-Type':'image/png','Cache-Control':'public, max-age=300' }).send(png);
   } catch { res.status(500).json({ error:'Could not build the share image.' }); }
 });
@@ -201,7 +222,7 @@ app.post('/api/admin/auth/login', async (req,res) => {
 });
 app.get('/api/admin/auth/me',(req,res) => { const session=sessions.get(sessionKey(req.cookies.birthday_session||'')); if (!session || session.expiresAt<Date.now()) return res.status(401).json({authenticated:false}); res.json({authenticated:true,csrf:session.csrf}); });
 app.post('/api/admin/auth/logout',requireAdmin,(req,res) => { sessions.delete(sessionKey(req.cookies.birthday_session)); res.clearCookie('birthday_session',{path:'/',sameSite:'strict'}); res.sendStatus(204); });
-app.get('/api/admin/images',requireAdmin,requireMinio,async (_req,res) => { try { const rows=await syncImages(); const images=await Promise.all(rows.map(async row=>safeImage(row, row.missing?'':await getSignedUrl(client,new GetObjectCommand({Bucket:bucket,Key:row.object_key}),{expiresIn:signedUrlSeconds})))); res.json({items:images,total:images.length,duplicateFilenameOrders:duplicateOrders}); } catch { res.status(502).json({error:'Could not sync MinIO images.'}); } });
+app.get('/api/admin/images',requireAdmin,requireMinio,async (_req,res) => { try { const rows=await syncImages(); const images=rows.map(row=>safeImage(row,row.missing?'':mediaUrl(row.id,true))); res.json({items:images,total:images.length,duplicateFilenameOrders:duplicateOrders}); } catch { res.status(502).json({error:'Could not sync MinIO images.'}); } });
 app.post('/api/admin/images/sync',requireAdmin,requireMinio,async (_req,res) => { try { const rows=await syncImages(); res.json({total:rows.filter(row=>!row.missing).length}); } catch { res.status(502).json({error:'Could not sync MinIO images.'}); } });
 const multer = (await import('multer')).default;
 const upload = multer({ storage:multer.memoryStorage(), limits:{ fileSize:20*1024*1024,files:20 } });
