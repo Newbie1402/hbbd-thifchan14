@@ -37,7 +37,8 @@ app.set('trust proxy', process.env.TRUST_PROXY || false);
 app.use(express.json({ limit: '64kb' }));
 app.use((request, response, next) => {
   const origin = request.get('origin');
-  if (origin && !allowedOrigins.has(origin)) return response.status(403).json({ error: 'Origin is not allowed.' });
+  const sameOrigin = origin === `${request.protocol}://${request.get('host')}`;
+  if (origin && !allowedOrigins.has(origin) && !sameOrigin) return response.status(403).json({ error: 'Origin is not allowed.' });
   if (origin) response.setHeader('Access-Control-Allow-Origin', origin);
   response.setHeader('Vary', 'Origin');
   next();
