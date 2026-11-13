@@ -10,14 +10,16 @@ export async function createHeartQr(url) {
   const scale = (size - 1) / 41;
   const heartPath = `M${20.5 * scale} ${41 * scale}C${12 * scale} ${36 * scale} 0 ${29 * scale} 0 ${16 * scale}C0 ${4 * scale} ${12 * scale} ${1 * scale} ${20.5 * scale} ${10 * scale}C${29 * scale} ${1 * scale} ${41 * scale} ${4 * scale} ${41 * scale} ${16 * scale}C${41 * scale} ${29 * scale} ${29 * scale} ${36 * scale} ${20.5 * scale} ${41 * scale}Z`;
   const mask = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="${size}" height="${size}" fill="black"/><path d="${heartPath}" fill="white"/></svg>`);
-  const { data: maskPixels } = await sharp(mask).raw().toBuffer({ resolveWithObject: true });
+  const { data: maskPixels } = await sharp(mask).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const modules = [];
   for (let row = 0; row < qr.modules.size; row += 1) {
     for (let column = 0; column < qr.modules.size; column += 1) {
       if (!qr.modules.get(row, column)) continue;
       const moduleOffset = (row + margin) * size + column + margin;
       const insideHeart = maskPixels[moduleOffset * 3] > 127;
-      if (qr.modules.isReserved(row, column) || insideHeart) {
+      const finder = (row < 8 && column < 8) || (row < 8 && column >= qr.modules.size - 8) || (row >= qr.modules.size - 8 && column < 8);
+      const timing = row === 6 || column === 6;
+      if (insideHeart || finder || timing) {
         modules.push(`<rect x="${column + margin}" y="${row + margin}" width="1" height="1"/>`);
       }
     }
