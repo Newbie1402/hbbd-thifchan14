@@ -9,7 +9,7 @@ type Props = { photos: MemoryPhoto[]; active: boolean; onSolved: (imageId: strin
 
 export default function MemoryPuzzleApp({ photos, active, onSolved, onViewMemory, onOpenMemories, onRefresh }: Props) {
   const [photo, setPhoto] = useState<MemoryPhoto | null>(null);
-  const [status, setStatus] = useState<Status>(photos.length ? 'ready' : 'idle');
+  const [status, setStatus] = useState<Status>('idle');
   const [difficulty, setDifficulty] = useState<Difficulty>('easy');
   const [tiles, setTiles] = useState<number[]>([]);
   const [moves, setMoves] = useState(0);
