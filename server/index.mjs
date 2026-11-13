@@ -9,7 +9,7 @@ import { dirname, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import sharp from 'sharp';
 import { selectNumberedImages } from './memory-utils.mjs';
-import { createShareCard, SHARE_CARD_VERSION } from './share-card.mjs';
+import { createHeartQr, createShareCard, SHARE_CARD_VERSION } from './share-card.mjs';
 
 const app = express();
 const port = Number(process.env.MEMORIES_API_PORT || 8787);
@@ -205,6 +205,14 @@ app.get('/api/public/share-card.png', async (_req, res) => {
     const png = await createShareCard(config.shareUrl);
     res.set({ 'Content-Type':'image/png','Cache-Control':'public, max-age=300' }).send(png);
   } catch { res.status(500).json({ error:'Could not build the share image.' }); }
+});
+app.get('/api/public/share-qr.png', async (_req, res) => {
+  const config = publicSiteConfig();
+  if (!config.shareReady) return res.status(404).json({ error: 'Sharing is not enabled in Birthday OS admin.' });
+  try {
+    const png = await createHeartQr(config.shareUrl);
+    res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=300' }).send(png);
+  } catch { res.status(500).json({ error: 'Could not build the share QR.' }); }
 });
 
 app.post('/api/admin/auth/login', async (req,res) => {

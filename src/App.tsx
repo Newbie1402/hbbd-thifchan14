@@ -15,6 +15,7 @@ import BugHunterApp from '@/features/bug-hunter/BugHunterApp';
 import BirthdayQuestApp from '@/features/birthday-quest/BirthdayQuestApp';
 
 const PhotoLightbox=lazy(()=>import('@/PhotoLightbox'));
+const appVersion = '14.11';
 
 type AppId = 'note' | 'gallery' | 'cake' | 'surprise' | 'settings' | 'terminal' | 'help' | 'final' | 'puzzle' | 'bug-hunter' | 'quests';
 type SurpriseStage = 'idle' | 'anticipation' | 'explosion' | 'reveal' | 'afterglow' | 'completed';
@@ -184,13 +185,13 @@ function BirthdayDesktop() {
   const copyMessage = async () => { const copied=await copyText(`${birthday.noteTitle}\n\n${birthday.noteParagraphs.map(stripMarkdown).join('\n\n')}`);setCopied(copied);if(!copied)setToast('Không thể truy cập clipboard trên trình duyệt này.');window.setTimeout(() => setCopied(false), 1600); };
   const copyShareLink = async () => { if(await copyText(shareUrl||''))setToast('Đã sao chép link chia sẻ.');else setToast('Không thể sao chép link trên trình duyệt này.'); };
   const shareBirthday = async () => { if(!shareUrl)return;try{if(navigator.share)await navigator.share({title:'Birthday OS — Thuỳ Trang',url:shareUrl});else await copyShareLink();}catch(error){if(error instanceof Error&&error.name!=='AbortError')setToast('Không thể mở bảng chia sẻ.');} };
-  const showQr = async () => { if(!shareUrl)return;const QRCode=await import('qrcode');setQrData(await QRCode.toDataURL(shareUrl,{errorCorrectionLevel:'H',margin:4,width:320})); };
+  const showQr = async () => { if(!shareUrl)return;try{const response=await fetch('/api/public/share-qr.png');if(!response.ok)throw new Error('Could not load QR');const reader=new FileReader();reader.onload=()=>setQrData(String(reader.result||''));reader.readAsDataURL(await response.blob());}catch{setToast('Không thể tải mã QR. Hãy thử lại sau.');} };
 
   if (boot) return <BootScene onSkip={finishBoot} reduced={shouldReduce} />;
   return <main className={`desktop ${shouldReduce ? 'reduced' : ''} ${sparkles ? '' : 'sparkles-off'}`}>
     <div className="wallpaper" aria-hidden="true"><span className="orb orb-a"/><span className="orb orb-b"/><span className="orb orb-c"/><div className="grid-glow"/><div className="float-code code-a">{'{ }'}</div><div className="float-code code-b">&lt;/&gt;</div><div className="float-code code-c">♡</div><div className="sparkle s1">✦</div><div className="sparkle s2">✧</div><div className="sparkle s3">✦</div></div>
     <header className="menubar">
-      <button className="brand" onClick={() => { closeApp(); window.scrollTo({ top: 0, behavior: 'smooth' }); }} aria-label="Birthday OS home"><Heart size={18} fill="currentColor"/><b>Birthday OS</b><span>v3.2</span></button>
+      <button className="brand" onClick={() => { closeApp(); window.scrollTo({ top: 0, behavior: 'smooth' }); }} aria-label="Birthday OS home"><Heart size={18} fill="currentColor"/><b>Birthday OS</b><span>v{appVersion}</span></button>
       <nav className="top-links"><button onClick={() => { closeApp(); }}>Home</button><button onClick={() => openApp('gallery')}>Memories</button><button onClick={() => setHelpTip(!helpTip)}>Help</button></nav>
       <div className="system-status">{questWidgetVisible&&<button className="quest-trigger" aria-label={`Birthday Quest ${questCount(quest)} trên 6`} title="Birthday Quest" onClick={()=>openApp('quests')}><span className="quest-stars">{Array.from({length:6},(_,index)=><Star key={index} size={12} fill={index<questCount(quest)?'currentColor':'none'} aria-hidden="true"/>)}</span>{questCount(quest)}/6</button>}<button className="icon-plain share-trigger" aria-label="Chia sẻ birthday website" title="Chia sẻ" onClick={()=>setShareOpen(!shareOpen)}><Share2 size={16}/></button><span className="clock">{new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date())}</span><button className="icon-plain" aria-label="Keyboard shortcuts" onClick={() => setHelpTip(!helpTip)}><Command size={16}/></button></div>
     </header>
@@ -253,7 +254,7 @@ function BootScene({ onSkip, reduced }: { onSkip: () => void; reduced: boolean }
   const lines = ['> booting_birthday_system...', '> loading: birthday_memories...', '> mounting: secret_note.md...', '> checking: happiness_level... 100%', '> welcome to Birthday OS ♡'];
   const [progress, setProgress] = useState(reduced ? 100 : 0);
   useEffect(() => { if (reduced) return; const timer = window.setInterval(() => setProgress((value) => Math.min(100, value + 2)), 68); return () => window.clearInterval(timer); }, [reduced]);
-  return <div className="boot-screen"><div className="boot-orb one"/><div className="boot-orb two"/><section className="boot-panel"><div className="boot-title"><span/><span/><span/><b>Birthday OS v3.2</b></div><div className="boot-heart">♡</div><div className="boot-lines">{lines.map((line, i) => <div key={line} className={progress > i * 19 ? 'visible' : ''}>{line}</div>)}</div><div className="boot-footer"><div className="progress-row"><div className="progress-track"><span style={{ width: `${progress}%` }}/></div><b>{progress}%</b></div><button className="skip-button" onClick={onSkip}>{reduced ? 'Enter birthday space' : 'Skip intro'}</button></div></section><span className="boot-caption">a tiny celebration is loading ✦</span></div>;
+  return <div className="boot-screen"><div className="boot-orb one"/><div className="boot-orb two"/><section className="boot-panel"><div className="boot-title"><span/><span/><span/><b>Birthday OS v{appVersion}</b></div><div className="boot-heart">♡</div><div className="boot-lines">{lines.map((line, i) => <div key={line} className={progress > i * 19 ? 'visible' : ''}>{line}</div>)}</div><div className="boot-footer"><div className="progress-row"><div className="progress-track"><span style={{ width: `${progress}%` }}/></div><b>{progress}%</b></div><button className="skip-button" onClick={onSkip}>{reduced ? 'Enter birthday space' : 'Skip intro'}</button></div></section><span className="boot-caption">a tiny celebration is loading ✦</span></div>;
 }
 function Gallery({ photos, source, state, error, active, onRefresh, selected, setSelected, onViewed }: { photos: MemoryPhoto[]; source: MemoriesSource; state: 'loading' | 'ready' | 'error'; error: string; active: boolean; onRefresh: () => void; selected: number; setSelected: (index: number) => void; onViewed:(imageId:string)=>void }) {
   const [tab, setTab] = useState<'library' | 'film' | 'scrapbook'>('library');

@@ -11,9 +11,11 @@ describe('Birthday OS', () => {
   it('keeps boot controls separate and Skip intro enters the desktop', () => {
     render(<App />);
     expect(screen.getByRole('button', { name: 'Skip intro' })).toBeInTheDocument();
+    expect(screen.getByText('Birthday OS v14.11')).toBeInTheDocument();
     expect(document.querySelector('.boot-footer .progress-row')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Skip intro' }));
     expect(screen.getByRole('heading', { name: /Nguyễn Thị Thuỳ Trang/ })).toBeInTheDocument();
+    expect(screen.getByText('v14.11')).toBeInTheDocument();
   });
 
   it('shows the recipient and opens/closes the note by keyboard', async () => {
@@ -49,6 +51,19 @@ describe('Birthday OS', () => {
     expect(screen.getByText('Wish sent into the universe ✨')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Thắp lại nến 🕯️' }));
     expect(screen.getByText('Make a wish, Trang!')).toBeInTheDocument();
+  });
+
+  it('loads a memory before enabling the puzzle', async () => {
+    vi.stubGlobal('Image', class {
+      onload: (() => void) | null = null;
+      set src(_value: string) { queueMicrotask(() => this.onload?.()); }
+    });
+    sessionStorage.setItem('birthday-booted', '1');
+    render(<App />);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Puzzle' })[0]);
+    expect(await screen.findByRole('group', { name: '3 by 3 memory puzzle' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Start puzzle' }));
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
   });
 
   it('opens Spotlight from the keyboard and opens a matching app', () => {
