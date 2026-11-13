@@ -1,6 +1,7 @@
 import type { MemoriesResponse, MemoryPhoto } from '@/types/memories';
 
-const apiBase = import.meta.env.VITE_MEMORIES_API_BASE_URL?.replace(/\/$/, '');
+const configuredApi = import.meta.env.VITE_MEMORIES_API_BASE_URL;
+const apiBase = (configuredApi || (import.meta.env.PROD ? '/api' : '')).replace(/\/$/, '');
 let cached: { expiresAt: number; data: MemoriesResponse } | null = null;
 
 export function memoriesApiConfigured() { return Boolean(apiBase); }

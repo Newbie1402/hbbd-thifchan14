@@ -14,9 +14,10 @@ const noteParagraphs = [
 ];
 
 export const birthday: BirthdayConfig = {
-  recipientName: 'Nguyễn Thị Thuỳ Trang', recipientHandle: 'thichannn', birthdayDate: null,
+  recipientName: 'Nguyễn Thị Thuỳ Trang', recipientHandle: 'thichannn', birthdayDate: '14.11',
   senderName: 'Anh', noteTitle: 'Gửi Thuỳ Trang của anh ♡', noteParagraphs,
   surpriseMessage: 'git commit -m "another year of wonderful you ✨"\nstatus: happiness_deployed_successfully ♡',
+  finalWish: 'Mong những ngày tới sẽ mang đến cho em thật nhiều niềm vui, và mong em luôn tự hào về con đường mình đã chọn.',
   heroPresentation: 'hybrid',
   photos: [
     { id: 'roses', src: '01-roses-shop', alt: 'Trang bên bó hoa hồng', caption: 'A little flower moment' },
